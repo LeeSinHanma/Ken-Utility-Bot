@@ -1,4 +1,4 @@
-const {ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder} = require("discord.js");
+const {ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags} = require("discord.js");
 
 // Map to track active timeout references by unique alarm ID
 const activeAlarms = new Map();
@@ -55,6 +55,12 @@ module.exports = {
                 description: "Upload a screenshot of the vortex",
                 type: 11, // Attachment type
                 required: false
+            },
+            {
+                name: "remind-before",
+                description: "How many minutes before the end to send an early warning (e.g. 5)",
+                type: 4, // Integer type
+                required: false
             }
         ]
     },
@@ -66,6 +72,7 @@ module.exports = {
         const duration = interaction.options.getInteger("duration");
         const interval = interaction.options.getInteger("interval");
         const attachment = interaction.options.getAttachment("vortex-image");
+        const remindBefore = interaction.options.getInteger("remind-before");
         const imageUrl = attachment ? attachment.url : null;
 
         // Unique ID for this specific alarm
@@ -75,14 +82,14 @@ module.exports = {
         if (duration < 1 || duration > 360) {
             return await interaction.reply({
                 content: "Please specify a duration between 1 and 360 minutes.",
-                ephemeral: true
+                flags: [MessageFlags.Ephemeral]
             });
         }
 
         if (interval < 1 || interval >= duration) {
             return await interaction.reply({
                 content: "Interval must be at least 1 minute and less than the total duration.",
-                ephemeral: true
+                flags: [MessageFlags.Ephemeral]
             });
         }
 
@@ -118,7 +125,7 @@ module.exports = {
                 { name: "📍 Location", value: location, inline: true },
                 { name: "🎯 Role", value: role.toString(), inline: true },
                 { name: "⏰ Arrival Time", value: arrivalString, inline: true },
-                { name: "⏲️ Schedule", value: `Every ${interval}m for ${duration}m`, inline: false }
+                { name: "⏲️ Schedule", value: `Every ${interval}m for ${duration}m${remindBefore ? ` (Early Warning: ${remindBefore}m before)` : ""}`, inline: false }
             )
             .setFooter({ text: `Alarm ID: ${alarmId}` })
             .setTimestamp();
@@ -126,11 +133,13 @@ module.exports = {
         // Include the image if it was provided
         if (imageUrl) embed.setImage(imageUrl);
 
-        const initialReply = await interaction.reply({
+        const response = await interaction.reply({
             embeds: [embed],
             components: [row],
-            fetchReply: true
+            withResponse: true
         });
+
+        const initialReply = response.resource;
 
         const startTime = Date.now();
         // Initialize the alarm tracking with the initial message and clocks
@@ -138,16 +147,23 @@ module.exports = {
             timeoutRef: null, 
             lastMessage: initialReply, 
             imageUrl,
-            arrivalString 
+            arrivalString,
+            remindBefore 
         });
 
-        const mentionPoints = [];
+        const rawPoints = [];
         for (let m = interval; m < duration; m += interval) {
-            mentionPoints.push(m);
+            rawPoints.push(m);
         }
-        if (mentionPoints.length === 0 || mentionPoints[mentionPoints.length - 1] !== duration) {
-            mentionPoints.push(duration);
+        // Add early warning point if it exists
+        if (remindBefore && remindBefore > 0 && remindBefore < duration) {
+            rawPoints.push(duration - remindBefore);
         }
+        // Always add the final duration point
+        rawPoints.push(duration);
+
+        // Sort points and remove duplicates
+        const mentionPoints = [...new Set(rawPoints.filter(p => p > 0))].sort((a, b) => a - b);
 
         const scheduleSpecificPoint = (pointIndex) => {
             if (pointIndex >= mentionPoints.length) {
@@ -173,13 +189,25 @@ module.exports = {
                         }
                     }
 
-                    const isFinal = (pointIndex === mentionPoints.length - 1);
+                    const isFinal = (targetMinute === duration);
+                    const isWarning = (alarmData?.remindBefore && targetMinute === (duration - alarmData.remindBefore));
                     const elapsed = Math.round((Date.now() - startTime) / 60000);
                     
+                    let title = `⏰ Vortex Reminder`;
+                    let desc = `The **${vortexType} Vortex** is still being tracked.`;
+                    
+                    if (isFinal) {
+                        title = `🎊 Vortex is UP!`;
+                        desc = `**${vortexType} Vortex** is active at **${location}**!`;
+                    } else if (isWarning) {
+                        title = `⚠️ Early Warning!`;
+                        desc = `Prepare! Only **${alarmData.remindBefore} minutes remaining** for the **${vortexType} Vortex**!`;
+                    }
+
                     const updateEmbed = new EmbedBuilder()
                         .setColor(color)
-                        .setTitle(isFinal ? `🎊 Vortex is UP!` : `⏰ Vortex Reminder`)
-                        .setDescription(isFinal ? `**${vortexType} Vortex** is active at **${location}**!` : `The **${vortexType} Vortex** is still being tracked.`)
+                        .setTitle(title)
+                        .setDescription(desc)
                         .addFields(
                             { name: "📍 Location", value: location, inline: true },
                             { name: "⏰ Arrival Time", value: alarmData?.arrivalString || arrivalString, inline: true },
@@ -192,7 +220,7 @@ module.exports = {
                     if (alarmData?.imageUrl) updateEmbed.setImage(alarmData.imageUrl);
 
                     const newMessage = await interaction.channel.send({
-                        content: isFinal ? `🏁 ${role} GO GO GO!` : `🔔 Reminder for ${role}`,
+                        content: isFinal ? `🏁 ${role} GO GO GO!` : (isWarning ? `🚨 ${role} PREPARE!` : `🔔 Reminder for ${role}`),
                         embeds: [updateEmbed],
                         components: [row] // Keep the button on the latest message
                     });
@@ -255,7 +283,7 @@ module.exports = {
             } else {
                 await interaction.reply({
                     content: "This alarm has already finished or was already stopped.",
-                    ephemeral: true
+                    flags: [MessageFlags.Ephemeral]
                 });
             }
         }

@@ -1,5 +1,5 @@
 const {token, clientId, guildId} = require("./config.json");
-const {Client, GatewayIntentBits, REST, Routes, Events} = require("discord.js");
+const {Client, GatewayIntentBits, REST, Routes, Events, MessageFlags} = require("discord.js");
 const vortexPing = require("./vortexPing.js");
 
 // Added GuildMembers intent to allow for fetching role data easily
@@ -75,7 +75,7 @@ client.on("interactionCreate", async interaction => {
             if (duration < 1 || duration > 360) {
                 return await interaction.reply({
                     content: "Please specify a duration between 1 and 360 minutes (6 hours).",
-                    ephemeral: true
+                    flags: [MessageFlags.Ephemeral]
                 });
             }
 
@@ -96,7 +96,7 @@ client.on("interactionCreate", async interaction => {
             if (interval < 1 || interval >= duration) {
                 return await interaction.reply({
                     content: "Interval must be at least 1 minute and less than the total duration.",
-                    ephemeral: true
+                    flags: [MessageFlags.Ephemeral]
                 });
             }
 
