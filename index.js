@@ -1,166 +1,216 @@
+const fs = require("node:fs");
+const path = require("node:path");
 const {token, clientId, guildId} = require("./config.json");
-const {Client, GatewayIntentBits, REST, Routes, Events, MessageFlags} = require("discord.js");
-const vortexPing = require("./vortexPing.js");
+const {Client, GatewayIntentBits, REST, Routes, Events, Collection, MessageFlags, InteractionType} = require("discord.js");
 
-// Added GuildMembers intent to allow for fetching role data easily
+// Initialize Client with necessary intents
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildMembers
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.MessageContent // Needed for legacy !ping
     ]
 });
 
+// Command Collection for modular handling
+client.commands = new Collection();
+
+// Load commands dynamically from the commands/ directory
+const commandsPath = path.join(__dirname, "commands");
+const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith(".js"));
+
+const commandsData = []; // To store data for registration
+
+for (const file of commandFiles) {
+    const filePath = path.join(commandsPath, file);
+    const command = require(filePath);
+    
+    if ("data" in command && "execute" in command) {
+        client.commands.set(command.data.name, command);
+        commandsData.push(command.data);
+    } else {
+        console.warn(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
+    }
+}
+
+
+
 client.once(Events.ClientReady, async () => {
     console.log(`Logged in as ${client.user.tag}!`);
+    console.log(`Loaded ${client.commands.size} base modular commands.`);
     
-    // Define commands to register
-    const commands = [
-        {
-            name: "ping",
-            description: "Replies with Pong!"
-        },
-        {
-            name: "mention-role",
-            description: "Mention a specific role with a timed alarm",
-            options: [
-                {
-                    name: "target-role",
-                    description: "The role you want to mention",
-                    type: 8, // Role type
-                    required: true
-                },
-                {
-                    name: "duration",
-                    description: "Total time in minutes for the alarm (max 360/6h)",
-                    type: 4, // Integer type
-                    required: false
-                },
-                {
-                    name: "interval",
-                    description: "Remind every X minutes during the duration",
-                    type: 4, // Integer type
-                    required: false
-                }
-            ]
-        },
-        vortexPing.data // New command from separate file
-    ];
-
     const rest = new REST({version: "10"}).setToken(token);
+    const customDataPath = path.join(__dirname, "data", "custom_commands.json");
+    const templateAlert = require("./commands/template-alert.js");
 
-    try {
-        console.log(`Started refreshing application (/) commands for server [${guildId}]`);
-        await rest.put(Routes.applicationGuildCommands(clientId, guildId), {body: commands});
-        console.log("Successfully reloaded application (/) commands.");
-    } catch (error) {
-        console.error(error);
-    }
-});
-
-client.on("interactionCreate", async interaction => {
-    if (interaction.isChatInputCommand()) {
-        const {commandName} = interaction;
-
-        if (commandName === "ping") {
-            await interaction.reply("Pong!");
-        } else if (commandName === "vortex-ping") {
-            await vortexPing.execute(interaction);
-        } else if (commandName === "mention-role") {
-            const role = interaction.options.getRole("target-role");
-        const duration = interaction.options.getInteger("duration");
-        const interval = interaction.options.getInteger("interval");
-
-        if (duration) {
-            if (duration < 1 || duration > 360) {
-                return await interaction.reply({
-                    content: "Please specify a duration between 1 and 360 minutes (6 hours).",
-                    flags: [MessageFlags.Ephemeral]
-                });
-            }
-
-            // Simple one-off alarm
-            if (!interval) {
-                await interaction.reply(`Alarm set! I will mention ${role} in ${duration} minute(s).`);
-                setTimeout(async () => {
-                    try {
-                        await interaction.channel.send(`⏰ **Alarm!** ${role} member(s), you were mentioned by ${interaction.user}!`);
-                    } catch (error) {
-                        console.error("Failed to send alarm message:", error);
-                    }
-                }, duration * 60 * 1000);
-                return;
-            }
-
-            // Recurring alarm with interval
-            if (interval < 1 || interval >= duration) {
-                return await interaction.reply({
-                    content: "Interval must be at least 1 minute and less than the total duration.",
-                    flags: [MessageFlags.Ephemeral]
-                });
-            }
-
-            await interaction.reply({
-                content: `Recurring alarm set! I will mention ${role} every ${interval} minutes for a total of ${duration} minutes.`
-            });
-
-            const startTime = Date.now();
-            
-            // Pre-calculate all target points (in minutes)
-            const mentionPoints = [];
-            for (let m = interval; m < duration; m += interval) {
-                mentionPoints.push(m);
-            }
-            // Always add the final duration point if it wasn't added
-            if (mentionPoints.length === 0 || mentionPoints[mentionPoints.length - 1] !== duration) {
-                mentionPoints.push(duration);
-            }
-
-            console.log(`Scheduling alarms at minutes: ${mentionPoints.join(", ")}`);
-
-            const scheduleSpecificPoint = (pointIndex) => {
-                if (pointIndex >= mentionPoints.length) {
-                    console.log("All alarm points completed.");
-                    return;
-                }
-
-                const targetMinute = mentionPoints[pointIndex];
-                const targetTime = startTime + (targetMinute * 60 * 1000);
-                const delay = targetTime - Date.now();
-
-                // If for some reason delay is less than or equal to 0, trigger it immediately
-                setTimeout(async () => {
-                    try {
-                        const actualElapsed = Math.round((Date.now() - startTime) / 60000);
-                        await interaction.channel.send(`⏰ **Alarm!** ${role} members, ${actualElapsed}m have passed! (Total: ${duration}m). Mentions from ${interaction.user}!`);
-                        
-                        // Proceed to the next point
-                        scheduleSpecificPoint(pointIndex + 1);
-                    } catch (error) {
-                        console.error("Failed to send recurring alarm message:", error);
-                        // Still try to schedule next even if current fails
-                        scheduleSpecificPoint(pointIndex + 1);
-                    }
-                }, delay > 0 ? delay : 0);
-            };
-
-            // Start the first point
-            scheduleSpecificPoint(0);
-
-        } else {
-            // Immediate mention if no duration is provided
-            await interaction.reply(`Immediate Mention: ${role}`);
+    // Load custom commands but we only use them to create "virtual" command objects
+    let customData = {};
+    if (fs.existsSync(customDataPath)) {
+        try {
+            customData = JSON.parse(fs.readFileSync(customDataPath, "utf-8"));
+        } catch (err) {
+            console.error("Failed to load custom commands factory:", err);
         }
     }
-} else if (interaction.isButton()) {
-    await vortexPing.handleButton(interaction);
-}
+
+    // Define registration function for a single guild
+    const registerGuildCommands = async (guild) => {
+        const guildId = guild.id;
+        const guildCommandsData = [];
+
+        // 1. Add all STATIC commands from the commands/ directory
+        // We filter out template-alert here if needed, but the loader already skips things without data
+        client.commands.forEach(cmd => {
+            // To prevent recursion/confusion, only add real file-based commands here
+            if (cmd.data && !cmd.isVirtual) {
+                guildCommandsData.push(cmd.data);
+            }
+        });
+
+        // 2. Add VIRTUAL (Custom) commands for THIS specific guild
+        if (customData[guildId]) {
+            for (const config of customData[guildId]) {
+                const virtualCommand = {
+                    isVirtual: true,
+                    data: {
+                        name: config.name,
+                        description: config.description,
+                        options: [
+                            { name: "target-role", description: `Override role (Preset: ${config.roleId ? "Set" : "None"})`, type: 8, required: false },
+                            { name: "location", description: "Set or override location", type: 3, required: false },
+                            { name: "vortex-image", description: "Upload a screenshot", type: 11, required: false },
+                            { name: "duration", description: `Override duration (Preset: ${config.duration}m)`, type: 4, required: false },
+                            { name: "interval", description: `Override interval (Preset: ${config.interval}m)`, type: 4, required: false },
+                            { name: "remind-before", description: `Override early warning (Preset: ${config.remindBefore || 0}m)`, type: 4, required: false }
+                        ]
+                    },
+                    async execute(interaction) {
+                        await templateAlert.execute(interaction, config);
+                    },
+                    async handleButton(interaction) {
+                        await templateAlert.handleButton(interaction);
+                    }
+                };
+
+                // Add to client.commands for the interaction handler to find it
+                // Note: Collision check - if multiple guilds use the same command name,
+                // our handler will find the template which then uses guildId to find config.
+                // We'll store it as a single entry in client.commands because the template handles the guild lookup.
+                if (!client.commands.has(config.name)) {
+                    client.commands.set(config.name, virtualCommand);
+                }
+                guildCommandsData.push(virtualCommand.data);
+            }
+        }
+
+        try {
+            await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: guildCommandsData });
+            console.log(`[SYNC] Synced ${guildCommandsData.length} commands for server: ${guild.name} (${guildId})`);
+        } catch (error) {
+            console.error(`Failed to register commands for server ${guild.name}:`, error);
+        }
+    };
+
+    // Parallel registration for all guilds
+    const guilds = await client.guilds.fetch();
+    console.log(`Starting command synchronization for ${guilds.size} servers...`);
+    
+    for (const [id, guildInfo] of guilds) {
+        try {
+            const guild = await client.guilds.fetch(id);
+            await registerGuildCommands(guild);
+        } catch (err) {
+            console.error(`Failed to fetch and sync for guild ${id}:`, err);
+        }
+    }
+
+    console.log("Global command synchronization complete.");
 });
 
-client.on("messageCreate", async message => {
+// Sync commands when joining a new server
+client.on(Events.GuildCreate, async (guild) => {
+    console.log(`Joined new server: ${guild.name}! Registering commands...`);
+    // Note: We'd need to re-fetch customData or have it updated
+    // For simplicity, we just trigger the registration with what's on disk
+    const registerGuildCommands = async (guild) => {
+        const rest = new REST({version: "10"}).setToken(token);
+        const guildCommandsData = [];
+        client.commands.forEach(cmd => { if (cmd.data && !cmd.isVirtual) guildCommandsData.push(cmd.data); });
+        try {
+            await rest.put(Routes.applicationGuildCommands(clientId, guild.id), { body: guildCommandsData });
+            console.log(`[SYNC] Registered base commands for new server: ${guild.name}`);
+        } catch (error) {
+            console.error("Failed to register commands on join:", error);
+        }
+    };
+    await registerGuildCommands(guild);
+});
+
+client.on(Events.InteractionCreate, async interaction => {
+    // Handle Slash Commands
+    if (interaction.isChatInputCommand()) {
+        const command = client.commands.get(interaction.commandName);
+
+        if (!command) {
+            console.error(`No command matching ${interaction.commandName} was found.`);
+            return;
+        }
+
+        try {
+            await command.execute(interaction);
+        } catch (error) {
+            console.error(`Error executing ${interaction.commandName}:`, error);
+            const errorMessage = { content: "There was an error while executing this command!", flags: [MessageFlags.Ephemeral] };
+            if (interaction.replied || interaction.deferred) {
+                await interaction.followUp(errorMessage);
+            } else {
+                await interaction.reply(errorMessage);
+            }
+        }
+    } 
+    
+    // Handle Autocomplete Interactions
+    else if (interaction.type === InteractionType.ApplicationCommandAutocomplete) {
+        const command = client.commands.get(interaction.commandName);
+
+        if (!command) return;
+
+        try {
+            if (command.autocomplete) {
+                await command.autocomplete(interaction);
+            }
+        } catch (error) {
+            console.error(`Autocomplete error for ${interaction.commandName}:`, error);
+        }
+    }
+    
+    // Handle Button Interactions
+    else if (interaction.isButton()) {
+        // Buttons currently use a specific format, e.g. "stop_vortex_12345" or "stop_alert_12345"
+        
+        // 1. Check for basic Vortex buttons (Legacy/Migration check)
+        if (interaction.customId.startsWith("stop_vortex_")) {
+            // Check if any command (like vortex-ping used to) handles it
+            const templateAlert = require("./commands/template-alert.js");
+            await templateAlert.handleButton(interaction);
+        }
+        // 2. Check for "Template Alert" / Custom buttons
+        else if (interaction.customId.startsWith("stop_alert_")) {
+            // All custom commands share the handleButton in template-alert.js
+            const templateAlert = require("./commands/template-alert.js");
+            if (templateAlert && templateAlert.handleButton) {
+                await templateAlert.handleButton(interaction);
+            }
+        }
+    }
+});
+
+// Legacy Message Handler
+client.on(Events.MessageCreate, async message => {
     if (message.author.bot) return;
     if (message.content === "!ping") {
-        message.reply("Pong!");
+        message.reply("Pong! (Legacy mode)");
     }
 });
 

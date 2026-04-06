@@ -1,0 +1,13 @@
+{
+    "1121075987183059020": [
+        {
+            "name": "gld-vortex",
+            "description": "gold vortex",
+            "roleId": "1471467228389048506",
+            "duration": 50,
+            "interval": 5,
+            "remindBefore": 5,
+            "color": 16766720
+        }
+    ]
+}
