@@ -187,17 +187,23 @@ client.on(Events.InteractionCreate, async interaction => {
     
     // Handle Button Interactions
     else if (interaction.isButton()) {
-        // Buttons currently use a specific format, e.g. "stop_vortex_12345" or "stop_alert_12345"
-        
-        // 1. Check for basic Vortex buttons (Legacy/Migration check)
-        if (interaction.customId.startsWith("stop_vortex_")) {
-            // Check if any command (like vortex-ping used to) handles it
+        const customId = interaction.customId;
+
+        // 1. Check for split command buttons
+        if (customId.startsWith("split_")) {
+            const splitCommand = client.commands.get("split");
+            if (splitCommand && splitCommand.handleButton) {
+                return await splitCommand.handleButton(interaction);
+            }
+        }
+
+        // 2. Check for basic Vortex buttons (Legacy/Migration check)
+        if (customId.startsWith("stop_vortex_")) {
             const templateAlert = require("./commands/template-alert.js");
             await templateAlert.handleButton(interaction);
         }
-        // 2. Check for "Template Alert" / Custom buttons
-        else if (interaction.customId.startsWith("stop_alert_")) {
-            // All custom commands share the handleButton in template-alert.js
+        // 3. Check for "Template Alert" / Custom buttons
+        else if (customId.startsWith("stop_alert_")) {
             const templateAlert = require("./commands/template-alert.js");
             if (templateAlert && templateAlert.handleButton) {
                 await templateAlert.handleButton(interaction);

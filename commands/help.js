@@ -1,4 +1,4 @@
-const { EmbedBuilder } = require("discord.js");
+const { EmbedBuilder, MessageFlags } = require("discord.js");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -7,7 +7,7 @@ const customDataPath = path.join(__dirname, "..", "data", "custom_commands.json"
 module.exports = {
     data: {
         name: "help",
-        description: "Get a comprehensive guide on how to use the Vortex Alarm Bot"
+        description: "Get a comprehensive guide on how to use Ken Utility Bot"
     },
 
     async execute(interaction) {
@@ -29,32 +29,32 @@ module.exports = {
             : "No custom alerts created for this server yet.";
 
         const helpEmbed = new EmbedBuilder()
-            .setColor(0x00AE86)
-            .setTitle("⏱️ Advance Timer Bot - Universal Guide")
-            .setDescription("Welcome! This bot helps you coordinate recurring alerts and vortex pings with precision.")
+            .setColor("#2b2d31")
+            .setTitle("🛠️ Ken Utility Bot | User Manual")
+            .setDescription("Welcome to the premium command hub. Use the sections below to navigate our precision tools and economy features.")
             .addFields(
                 { 
-                    name: "📖 Quick Start: How Timers Work", 
-                    value: "• **Duration (m):** How long the alarm runs in minutes.\n• **Interval (m):** How often it mentions the role during the duration.\n• **Early Warning:** Set a special mention X minutes before the end (e.g. 5m before up)." 
+                    name: "💰 Split Economy", 
+                    value: "• \`/split start\` - Initiate a money split with claim-based payout.\n• \`/split check\` - See all splits currently waiting for your claim.\n• \`/split help\` - Detailed manual for the split system." 
                 },
                 { 
-                    name: "⚡ Core Commands", 
-                    value: "• \`/ping\` - Check if the bot is online.\n• \`/mention-role\` - Set a basic timed mention for any role." 
+                    name: "⏱️ Timers & Precision", 
+                    value: "• \`/mention-role\` - Set a high-precision recurring timer with early warnings.\n• \`/ping\` - Heartbeat check to verify bot responsiveness." 
                 },
                 { 
                     name: "🛠️ Management (Admins)", 
-                    value: "• \`/create-alert\` - Build a permanent server preset.\n• \`/edit-alert\` - Modify an existing preset.\n• \`/delete-alert\` - Remove a preset permanently." 
+                    value: "• \`/create-alert\` - Build a permanent server preset for common alerts.\n• \`/edit-alert\` - Modify existing presets locally.\n• \`/delete-alert\` - Permanently remove a preset." 
                 },
                 { 
-                    name: "🎯 This Server's Custom Alerts", 
+                    name: "🎯 Server Custom Presets", 
                     value: customList 
                 },
                 { 
                     name: "📝 Pro-Tips", 
-                    value: "• **Clean Chat:** The 'Stop' button and image only appear on the **latest** message.\n• **Precision:** Display arrival times in both `UTC` and `PH` clocks automatically." 
+                    value: "• **Locate Me:** Use the 'Locate' buttons in `/split check` to find buried thread pings.\n• **Safety First:** Deleting splits requires a host confirmation to prevent accidents.\n• **Dynamic Clocks:** Timer arrivals are shown in both `UTC` and `PH` time zones." 
                 }
             )
-            .setFooter({ text: "Type / followed by a command to get started!" })
+            .setFooter({ text: "Ken Utility Bot • Type / followed by a command to explore!" })
             .setTimestamp();
 
         await interaction.reply({ embeds: [helpEmbed] });

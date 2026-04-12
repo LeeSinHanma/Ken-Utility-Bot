@@ -11,7 +11,7 @@ module.exports = {
         options: [
             {
                 name: "name",
-                description: "The name of the new /command (lowercase, no spaces, e.g. farm-vortex)",
+                description: "The name of the new /command (lowercase, no spaces, e.g. farm-boss)",
                 type: 3, // String
                 required: true
             },
