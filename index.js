@@ -1,7 +1,46 @@
+require('dotenv').config();
 const fs = require("node:fs");
 const path = require("node:path");
-const {token, clientId, guildId} = require("./config.json");
+const { botOwners, bankAdminRoles } = require("./config.json");
+const { DISCORD_TOKEN: token, CLIENT_ID: clientId, GUILD_ID: guildId } = process.env;
 const {Client, GatewayIntentBits, REST, Routes, Events, Collection, MessageFlags, InteractionType} = require("discord.js");
+
+const db = require("./database");
+
+// Ensure "Bank Manager" role exists in a guild
+async function ensureBankRoles(guild) {
+    if (!guild.members.me.permissions.has("ManageRoles")) {
+        console.warn(`[BANK] Missing ManageRoles permission in ${guild.name}. Cannot ensure roles.`);
+        return;
+    }
+
+    let role;
+    const adminRoleId = db.settings.get(guild.id, "adminRoleId");
+    if (adminRoleId) {
+        role = await guild.roles.fetch(adminRoleId).catch(() => null);
+    }
+    
+    if (!role) {
+        role = guild.roles.cache.find(r => r.name === "Bank Manager");
+    }
+    
+    if (!role) {
+        try {
+            role = await guild.roles.create({
+                name: "Bank Manager",
+                color: "#FFD700",
+                reason: "Required for Bank Economy System"
+            });
+            console.log(`[BANK] Created 'Bank Manager' role in ${guild.name}`);
+        } catch (err) {
+            console.error(`[BANK] Failed to create role in ${guild.name}:`, err);
+        }
+    }
+    
+    if (role && adminRoleId !== role.id) {
+        db.settings.set(guild.id, "adminRoleId", role.id);
+    }
+}
 
 // Initialize Client with necessary intents
 const client = new Client({
@@ -41,84 +80,81 @@ client.once(Events.ClientReady, async () => {
     console.log(`Loaded ${client.commands.size} base modular commands.`);
     
     const rest = new REST({version: "10"}).setToken(token);
-    const customDataPath = path.join(__dirname, "data", "custom_commands.json");
     const templateAlert = require("./commands/template-alert.js");
 
-    // Load custom commands but we only use them to create "virtual" command objects
-    let customData = {};
-    if (fs.existsSync(customDataPath)) {
-        try {
-            customData = JSON.parse(fs.readFileSync(customDataPath, "utf-8"));
-        } catch (err) {
-            console.error("Failed to load custom commands factory:", err);
-        }
-    }
-
-    // Define registration function for a single guild
+    // Define registration function for custom commands per guild
     const registerGuildCommands = async (guild) => {
         const guildId = guild.id;
         const guildCommandsData = [];
 
-        // 1. Add all STATIC commands from the commands/ directory
-        // We filter out template-alert here if needed, but the loader already skips things without data
-        client.commands.forEach(cmd => {
-            // To prevent recursion/confusion, only add real file-based commands here
-            if (cmd.data && !cmd.isVirtual) {
-                guildCommandsData.push(cmd.data);
-            }
-        });
-
-        // 2. Add VIRTUAL (Custom) commands for THIS specific guild
-        if (customData[guildId]) {
-            for (const config of customData[guildId]) {
-                const virtualCommand = {
-                    isVirtual: true,
-                    data: {
-                        name: config.name,
-                        description: config.description,
-                        options: [
-                            { name: "target-role", description: `Override role (Preset: ${config.roleId ? "Set" : "None"})`, type: 8, required: false },
-                            { name: "location", description: "Set or override location", type: 3, required: false },
-                            { name: "vortex-image", description: "Upload a screenshot", type: 11, required: false },
-                            { name: "duration", description: `Override duration (Preset: ${config.duration}m)`, type: 4, required: false },
-                            { name: "interval", description: `Override interval (Preset: ${config.interval}m)`, type: 4, required: false },
-                            { name: "remind-before", description: `Override early warning (Preset: ${config.remindBefore || 0}m)`, type: 4, required: false }
-                        ]
-                    },
-                    async execute(interaction) {
-                        await templateAlert.execute(interaction, config);
-                    },
-                    async handleButton(interaction) {
-                        await templateAlert.handleButton(interaction);
-                    }
-                };
-
-                // Add to client.commands for the interaction handler to find it
-                // Note: Collision check - if multiple guilds use the same command name,
-                // our handler will find the template which then uses guildId to find config.
-                // We'll store it as a single entry in client.commands because the template handles the guild lookup.
-                if (!client.commands.has(config.name)) {
-                    client.commands.set(config.name, virtualCommand);
+        // Core commands are registered GLOBALLY now. 
+        // We only use guild registration for VIRTUAL (Custom) commands.
+        const customConfigs = db.customCommands.getForGuild(guildId);
+        
+        for (const config of customConfigs) {
+            const virtualCommand = {
+                isVirtual: true,
+                data: {
+                    name: config.name,
+                    description: config.description,
+                    options: [
+                        { name: "target-role", description: `Override role (Preset: ${config.roleId ? "Set" : "None"})`, type: 8, required: false },
+                        { name: "location", description: "Set or override location", type: 3, required: false },
+                        { name: "vortex-image", description: "Upload a screenshot", type: 11, required: false },
+                        { name: "duration", description: `Override duration (Preset: ${config.duration}m)`, type: 4, required: false },
+                        { name: "interval", description: `Override interval (Preset: ${config.interval}m)`, type: 4, required: false },
+                        { name: "remind-before", description: `Override early warning (Preset: ${config.remindBefore || 0}m)`, type: 4, required: false }
+                    ]
+                },
+                async execute(interaction) {
+                    await templateAlert.execute(interaction, config);
+                },
+                async handleButton(interaction) {
+                    await templateAlert.handleButton(interaction);
                 }
-                guildCommandsData.push(virtualCommand.data);
+            };
+
+            if (!client.commands.has(config.name)) {
+                client.commands.set(config.name, virtualCommand);
             }
+            guildCommandsData.push(virtualCommand.data);
         }
 
         try {
+            // Put even if empty to clear old guild commands if necessary
             await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: guildCommandsData });
-            console.log(`[SYNC] Synced ${guildCommandsData.length} commands for server: ${guild.name} (${guildId})`);
+            if (guildCommandsData.length > 0) {
+                console.log(`[SYNC] Synced ${guildCommandsData.length} custom commands for server: ${guild.name}`);
+            }
         } catch (error) {
-            console.error(`Failed to register commands for server ${guild.name}:`, error);
+            console.error(`Failed to register custom commands for server ${guild.name}:`, error);
         }
     };
 
-    // Parallel registration for all guilds
+    // 1. REGISTER GLOBAL COMMANDS (ONCE)
+    const globalCommandsData = [];
+    client.commands.forEach(cmd => {
+        if (cmd.data && !cmd.isVirtual) {
+            globalCommandsData.push(cmd.data);
+        }
+    });
+
+    try {
+        console.log(`Refreshing ${globalCommandsData.length} global application (/) commands...`);
+        await rest.put(Routes.applicationCommands(clientId), { body: globalCommandsData });
+        console.log("Successfully reloaded global application (/) commands.");
+    } catch (error) {
+        console.error("Failed to register global commands:", error);
+    }
+
+    // 2. REGISTER GUILD-SPECIFIC CUSTOM COMMANDS + SETUP ROLES
     const guilds = await client.guilds.fetch();
-    console.log(`Starting command synchronization for ${guilds.size} servers...`);
+    console.log(`Syncing roles and custom commands for ${guilds.size} servers...`);
     
     for (const [id, guildInfo] of guilds) {
         try {
             const guild = await client.guilds.fetch(id);
+            await ensureBankRoles(guild);
             await registerGuildCommands(guild);
         } catch (err) {
             console.error(`Failed to fetch and sync for guild ${id}:`, err);
@@ -144,6 +180,7 @@ client.on(Events.GuildCreate, async (guild) => {
             console.error("Failed to register commands on join:", error);
         }
     };
+    await ensureBankRoles(guild);
     await registerGuildCommands(guild);
 });
 
@@ -207,6 +244,19 @@ client.on(Events.InteractionCreate, async interaction => {
             const templateAlert = require("./commands/template-alert.js");
             if (templateAlert && templateAlert.handleButton) {
                 await templateAlert.handleButton(interaction);
+            }
+        }
+    }
+    
+    // Handle Select Menu Interactions
+    else if (interaction.isAnySelectMenu()) {
+        const customId = interaction.customId;
+
+        // Route split command select menus
+        if (customId.startsWith("split_")) {
+            const splitCommand = client.commands.get("split");
+            if (splitCommand && splitCommand.handleSelectMenu) {
+                return await splitCommand.handleSelectMenu(interaction);
             }
         }
     }
