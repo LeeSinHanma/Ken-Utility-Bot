@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "nodejs": {
+      "source": "blencorp/claude-code-kit",
+      "sourceType": "github",
+      "computedHash": "f308e5f23c235d370a3abe50fc075c019bee16b74601bdc0080fcaa7a796dcba"
+    }
+  }
+}

@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+.env
+data/*.db
+data/*.json
+.git
+.agents
+.gemini
+Dockerfile
+.dockerignore
