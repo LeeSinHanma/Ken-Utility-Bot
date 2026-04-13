@@ -70,6 +70,11 @@ module.exports = {
                         required: true
                     }
                 ]
+            },
+            {
+                name: "help",
+                description: "Detailed manual for the bank and economy system",
+                type: 1 // Subcommand
             }
         ]
     },
@@ -238,6 +243,32 @@ module.exports = {
                 .setTimestamp();
 
             await interaction.reply({ embeds: [embed] });
+        }
+
+        // --- HELP SUBCOMMAND ---
+        else if (subcommand === "help") {
+            const embed = new EmbedBuilder()
+                .setTitle("📖 Bank & Economy Help Guide")
+                .setDescription("The Bank System provides a guild-wide economy where users can track coins and admins can manage funds.")
+                .addFields(
+                    { 
+                        name: "💰 Personal Banking", 
+                        value: "• `/bank balance` - View your current coin balance.\n• `/bank balance [user]` - (Admins Only) View another user's balance." 
+                    },
+                    {
+                        name: "🛠️ Admin Management",
+                        value: "• `/bank add <user> <amount>` - Grant coins to a member.\n• `/bank remove <user> <amount>` - Deduct coins from a member.\n• `/bank setup <role>` - Designate a role as a **Bank Manager**."
+                    },
+                    {
+                        name: "⚖️ Permissions",
+                        value: "• **Users**: Can check their own balance.\n• **Admins/Bank Managers**: Can modify any user's balance and view private economy data."
+                    }
+                )
+                .setColor("#FFD700")
+                .setTimestamp()
+                .setFooter({ text: "Ken Utility Bot • Secure Economy System" });
+
+            await interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
         }
     }
 };
