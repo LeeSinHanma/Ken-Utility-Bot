@@ -9,11 +9,6 @@ const db = require("./database");
 
 // Ensure "Bank Manager" role exists in a guild
 async function ensureBankRoles(guild) {
-    if (!guild.members.me.permissions.has("ManageRoles")) {
-        console.warn(`[BANK] Missing ManageRoles permission in ${guild.name}. Cannot ensure roles.`);
-        return;
-    }
-
     let role;
     const adminRoleId = db.settings.get(guild.id, "adminRoleId");
     if (adminRoleId) {
@@ -23,18 +18,29 @@ async function ensureBankRoles(guild) {
     if (!role) {
         role = guild.roles.cache.find(r => r.name === "Bank Manager");
     }
-    
-    if (!role) {
-        try {
-            role = await guild.roles.create({
-                name: "Bank Manager",
-                color: "#FFD700",
-                reason: "Required for Bank Economy System"
-            });
-            console.log(`[BANK] Created 'Bank Manager' role in ${guild.name}`);
-        } catch (err) {
-            console.error(`[BANK] Failed to create role in ${guild.name}:`, err);
+
+    // Existing role found; keep it and avoid unnecessary warning noise.
+    if (role) {
+        if (adminRoleId !== role.id) {
+            db.settings.set(guild.id, "adminRoleId", role.id);
         }
+        return;
+    }
+
+    if (!guild.members.me.permissions.has("ManageRoles")) {
+        console.warn(`[BANK] Missing ManageRoles permission in ${guild.name}. Cannot create 'Bank Manager' role. Grant Manage Roles or run /bank setup with an existing role.`);
+        return;
+    }
+    
+    try {
+        role = await guild.roles.create({
+            name: "Bank Manager",
+            colors: { primaryColor: "#FFD700" },
+            reason: "Required for Bank Economy System"
+        });
+        console.log(`[BANK] Created 'Bank Manager' role in ${guild.name}`);
+    } catch (err) {
+        console.error(`[BANK] Failed to create role in ${guild.name}:`, err);
     }
     
     if (role && adminRoleId !== role.id) {
@@ -64,8 +70,12 @@ const commandsData = []; // To store data for registration
 for (const file of commandFiles) {
     const filePath = path.join(commandsPath, file);
     const command = require(filePath);
+
+    if (command.internalOnly) {
+        continue;
+    }
     
-    if ("data" in command && "execute" in command) {
+    if ("data" in command && typeof command.execute === "function") {
         client.commands.set(command.data.name, command);
         commandsData.push(command.data);
     } else {

@@ -5,6 +5,7 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags
 const activeAlarms = new Map();
 
 module.exports = {
+    internalOnly: true,
     // This file acts as a TEMPLATE, not a standalone command
     // It will be "bound" to specific configurations in index.js
     
