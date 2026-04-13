@@ -34,16 +34,16 @@ module.exports = {
             .setDescription("Welcome to the premium command hub. Use the sections below to navigate our precision tools and economy features.")
             .addFields(
                 { 
-                    name: "💰 Split Economy", 
-                    value: "• \`/split start\` - Initiate a money split with claim-based payout.\n• \`/split check\` - See all splits currently waiting for your claim.\n• \`/split help\` - Detailed manual for the split system." 
+                    name: "💰 Economy & Banking", 
+                    value: "• `/split help` - Detailed manual for the split system.\n• `/bank help` - Comprehensive guide to the bank and coins." 
                 },
                 { 
-                    name: "⏱️ Timers & Precision", 
-                    value: "• \`/mention-role\` - Set a high-precision recurring timer with early warnings.\n• \`/ping\` - Heartbeat check to verify bot responsiveness." 
+                    name: "⏱️ Timers & Alerts", 
+                    value: "• `/alert help` - Master guide for server presets and alerts.\n• `/mention-role` - Quick high-precision recurring timers.\n• `/ping` - Heartbeat check for bot responsiveness." 
                 },
                 { 
-                    name: "🛠️ Management (Admins)", 
-                    value: "• \`/create-alert\` - Build a permanent server preset for common alerts.\n• \`/edit-alert\` - Modify existing presets locally.\n• \`/delete-alert\` - Permanently remove a preset." 
+                    name: "🛠️ Admin Tools", 
+                    value: "• `/create-alert` - Build a permanent server preset.\n• `/bank setup` - Configure bank management roles.\n• `/bank add/remove` - Manage user coin balances." 
                 },
                 { 
                     name: "🎯 Server Custom Presets", 
@@ -51,7 +51,7 @@ module.exports = {
                 },
                 { 
                     name: "📝 Pro-Tips", 
-                    value: "• **Locate Me:** Use the 'Locate' buttons in `/split check` to find buried thread pings.\n• **Safety First:** Deleting splits requires a host confirmation to prevent accidents.\n• **Dynamic Clocks:** Timer arrivals are shown in both `UTC` and `PH` time zones." 
+                    value: "• **Locate Me:** Use the 'Locate' buttons in `/split check` to find buried thread pings.\n• **Early Warnings:** Configure `remind-before` in alerts for advance notifications.\n• **Dynamic Clocks:** Arrival times are shown in both `UTC` and `PH` time zones." 
                 }
             )
             .setFooter({ text: "Ken Utility Bot • Type / followed by a command to explore!" })

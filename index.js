@@ -90,7 +90,7 @@ client.once(Events.ClientReady, async () => {
     console.log(`Loaded ${client.commands.size} base modular commands.`);
     
     const rest = new REST({version: "10"}).setToken(token);
-    const templateAlert = require("./commands/template-alert.js");
+    const templateAlert = require("./logic/template-alert.js");
 
     // Define registration function for custom commands per guild
     const registerGuildCommands = async (guild) => {
@@ -246,12 +246,12 @@ client.on(Events.InteractionCreate, async interaction => {
 
         // 2. Check for basic Vortex buttons (Legacy/Migration check)
         if (customId.startsWith("stop_vortex_")) {
-            const templateAlert = require("./commands/template-alert.js");
+            const templateAlert = require("./logic/template-alert.js");
             await templateAlert.handleButton(interaction);
         }
         // 3. Check for "Template Alert" / Custom buttons
         else if (customId.startsWith("stop_alert_")) {
-            const templateAlert = require("./commands/template-alert.js");
+            const templateAlert = require("./logic/template-alert.js");
             if (templateAlert && templateAlert.handleButton) {
                 await templateAlert.handleButton(interaction);
             }
