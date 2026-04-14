@@ -27,6 +27,42 @@ function generateDescription(session) {
     return `**Host:** <@${session.host_id}>\n**Initial Total:** ${session.total_amount.toLocaleString()}\n**Discount:** ${session.discount}%${details}\n**💎 Total to Split:** ${session.net_amount.toLocaleString()}\n\n**Recipients:**\n${lines.join("\n")}`;
 }
 
+async function finalizeSplitIfComplete(interaction, sessionId, session) {
+    const claimedValues = Object.values(session.claimed_status || {});
+    if (claimedValues.length === 0 || !claimedValues.every(Boolean)) {
+        return false;
+    }
+
+    try {
+        const channel = await interaction.client.channels.fetch(session.channel_id);
+        if (channel) {
+            for (const msgId of Object.values(session.host_notification_ids || {})) {
+                try {
+                    const msg = await channel.messages.fetch(msgId);
+                    await msg.delete();
+                } catch (error) {}
+            }
+
+            try {
+                const originalMsg = await channel.messages.fetch(session.message_id);
+                const completedEmbed = EmbedBuilder.from(originalMsg.embeds[0])
+                    .setTitle("✅ Money Split Completed")
+                    .setDescription(`${generateDescription(session)}\n\n**Status:** All shares have been claimed.`);
+
+                await originalMsg.edit({ embeds: [completedEmbed], components: [] });
+            } catch (error) {
+                console.error("Failed to update completed split message:", error);
+            }
+        }
+    } catch (error) {
+        console.error("Failed to finalize completed split session:", error);
+    } finally {
+        db.splits.delete(sessionId);
+    }
+
+    return true;
+}
+
 module.exports = {
     data: {
         name: "split",
@@ -231,6 +267,7 @@ module.exports = {
             session.message_id = response.id;
             
             db.splits.save(sessionId, session);
+            await finalizeSplitIfComplete(interaction, sessionId, session);
         }
 
         else if (subcommand === "check") {
@@ -478,6 +515,7 @@ module.exports = {
             } catch (err) {}
 
             db.splits.save(sessionId, session);
+            await finalizeSplitIfComplete(interaction, sessionId, session);
         }
 
         // --- CONFIRM ACTION (from claim notification) ---
@@ -546,6 +584,7 @@ module.exports = {
                 } catch (err) {}
 
                 db.splits.save(sessionId, session);
+                await finalizeSplitIfComplete(interaction, sessionId, session);
                 await interaction.reply({ content: `✅ Successfully marked ${updatedCount} user(s) as claimed.`, flags: [MessageFlags.Ephemeral] });
             } else {
                 await interaction.reply({ content: "ℹ️ No changes were made. Selected users might already be marked as claimed or aren't part of this split.", flags: [MessageFlags.Ephemeral] });

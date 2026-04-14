@@ -4,6 +4,15 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags
 // This must be shared across all virtual commands, so we can use a global Map or attach it to the client
 const activeAlarms = new Map();
 
+function clearAlarm(alarmId) {
+    const alarmData = activeAlarms.get(alarmId);
+    if (alarmData?.timeoutRef) {
+        clearTimeout(alarmData.timeoutRef);
+    }
+
+    activeAlarms.delete(alarmId);
+}
+
 module.exports = {
     internalOnly: true,
     // This file acts as a TEMPLATE, not a standalone command
@@ -162,11 +171,27 @@ module.exports = {
                     
                     if (activeAlarms.has(alarmId)) {
                         activeAlarms.set(alarmId, { ...activeAlarms.get(alarmId), lastMessage: newMessage });
-                        scheduleSpecificPoint(pointIndex + 1);
+                        const nextPointIndex = pointIndex + 1;
+                        if (nextPointIndex >= mentionPoints.length) {
+                            clearAlarm(alarmId);
+                            return;
+                        }
+
+                        scheduleSpecificPoint(nextPointIndex);
                     }
                 } catch (error) {
                     console.error("Cycle failed:", error);
-                    if (activeAlarms.has(alarmId)) scheduleSpecificPoint(pointIndex + 1);
+                    const nextPointIndex = pointIndex + 1;
+                    if (!activeAlarms.has(alarmId)) {
+                        return;
+                    }
+
+                    if (nextPointIndex >= mentionPoints.length) {
+                        clearAlarm(alarmId);
+                        return;
+                    }
+
+                    scheduleSpecificPoint(nextPointIndex);
                 }
             }, delay > 0 ? delay : 0);
 
@@ -205,7 +230,7 @@ module.exports = {
                     if (!interaction.replied) await interaction.reply(`🛑 Alarm stopped.`);
                 }
             }
-            activeAlarms.delete(alarmId);
+            clearAlarm(alarmId);
         } else {
             await interaction.reply({ content: "Alarm already finished or stopped.", flags: [MessageFlags.Ephemeral] });
         }

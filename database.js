@@ -120,6 +120,39 @@ const customCommands = {
     }
 };
 
+const splitCleanup = {
+    purgeStale: (maxAgeMs) => {
+        const rows = db.prepare("SELECT session_id, data FROM splits").all();
+        const deleteStmt = db.prepare("DELETE FROM splits WHERE session_id = ?");
+        const cutoffTime = Date.now() - maxAgeMs;
+        let deletedCount = 0;
+
+        for (const row of rows) {
+            let session;
+
+            try {
+                session = JSON.parse(row.data);
+            } catch (error) {
+                deleteStmt.run(row.session_id);
+                deletedCount++;
+                continue;
+            }
+
+            const createdAt = session.created_at ? new Date(session.created_at).getTime() : NaN;
+            const claimedValues = session.claimed_status ? Object.values(session.claimed_status) : [];
+            const isComplete = claimedValues.length > 0 && claimedValues.every(Boolean);
+            const isExpired = Number.isFinite(createdAt) ? createdAt < cutoffTime : true;
+
+            if (isComplete || isExpired) {
+                deleteStmt.run(row.session_id);
+                deletedCount++;
+            }
+        }
+
+        return deletedCount;
+    }
+};
+
 /**
  * SPLITS SESSION METHODS
  */
@@ -139,11 +172,11 @@ const splits = {
         return db.prepare("DELETE FROM splits WHERE session_id = ?").run(sessionId);
     },
     getAllPending: (userId) => {
-        const rows = db.prepare("SELECT data FROM splits").all();
+        const rows = db.prepare("SELECT session_id, data FROM splits").all();
         return rows
-            .map(r => JSON.parse(r.data))
+            .map(r => ({ id: r.session_id, ...JSON.parse(r.data) }))
             .filter(s => s.user_breakdown[userId] && !s.claimed_status[userId]);
     }
 };
 
-module.exports = { bank, settings, customCommands, splits, raw: db };
+module.exports = { bank, settings, customCommands, splits, splitCleanup, raw: db };
