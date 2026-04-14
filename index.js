@@ -7,6 +7,7 @@ const { Client, GatewayIntentBits, Events, Collection, MessageFlags, Interaction
 const db = require("./database");
 const templateAlert = require("./logic/template-alert.js");
 const { syncGuildCommands } = require("./logic/command-sync");
+const SPLIT_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 
 // Ensure "Bank Manager" role exists in a guild
 async function ensureBankRoles(guild) {
@@ -80,6 +81,11 @@ for (const file of commandFiles) {
 client.once(Events.ClientReady, async () => {
     console.log(`Logged in as ${client.user.tag}!`);
     console.log(`Loaded ${client.commands.size} base modular commands.`);
+
+    const purgedSplits = db.splitCleanup.purgeStale(SPLIT_RETENTION_MS);
+    if (purgedSplits > 0) {
+        console.log(`[CLEANUP] Purged ${purgedSplits} stale split session(s) during startup.`);
+    }
 
     const guilds = await client.guilds.fetch();
     console.log(`Syncing roles and slash commands for ${guilds.size} servers...`);
