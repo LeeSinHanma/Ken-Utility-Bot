@@ -8,7 +8,7 @@
 
 ### 🏦 Bank & Economy System
 
-- **Balance Management**: Check your balance or manage others' (with admin permissions).
+- **Balance Management**: Check your balance or manage others' (with Bank Manager role or bot owner access).
 - **Automated Roles**: Automatically manages the `Bank Manager` role for administration.
 - **Secure Transactions**: Powered by a robust SQLite backend using `better-sqlite3`.
 
@@ -47,7 +47,7 @@
 ### Setup Instructions
 
 1.  **Invite the Bot**: Ensure the bot has `Manage Roles` and `Send Messages` permissions.
-2.  **Role Setup**: Upon joining, the bot will automatically create or identify the **Bank Manager** role. Assign this role to users you want to grant administrative economy permissions.
+2.  **Role Setup**: Upon joining, the bot will automatically create or identify the **Bank Manager** role. Assign this role to users who should manage balances. Server admins can still use `/bank setup` to recover or change bank role configuration.
 
 ---
 

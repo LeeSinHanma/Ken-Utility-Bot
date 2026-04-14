@@ -13,6 +13,17 @@ function clearAlarm(alarmId) {
     activeAlarms.delete(alarmId);
 }
 
+function buildCleanedEmbed(message) {
+    const baseEmbed = message?.embeds?.[0];
+    if (!baseEmbed) {
+        return null;
+    }
+
+    const oldEmbed = EmbedBuilder.from(baseEmbed);
+    oldEmbed.setImage(null);
+    return oldEmbed;
+}
+
 module.exports = {
     internalOnly: true,
     // This file acts as a TEMPLATE, not a standalone command
@@ -126,9 +137,11 @@ module.exports = {
                     // Cleanup previous button/image
                     if (alarmData.lastMessage) {
                         try {
-                            const oldEmbed = EmbedBuilder.from(alarmData.lastMessage.embeds[0]);
-                            oldEmbed.setImage(null);
-                            await alarmData.lastMessage.edit({ embeds: [oldEmbed], components: [] });
+                            const cleanedEmbed = buildCleanedEmbed(alarmData.lastMessage);
+                            await alarmData.lastMessage.edit({
+                                embeds: cleanedEmbed ? [cleanedEmbed] : [],
+                                components: []
+                            });
                         } catch (err) {
                             console.error("Cleanup failed:", err.message);
                         }
@@ -213,13 +226,12 @@ module.exports = {
             
             if (alarmData.lastMessage) {
                 try {
-                    const oldEmbed = EmbedBuilder.from(alarmData.lastMessage.embeds[0]);
-                    oldEmbed.setImage(null);
+                    const cleanedEmbed = buildCleanedEmbed(alarmData.lastMessage);
 
                     if (interaction.message.id === alarmData.lastMessage.id) {
-                        await interaction.update({ embeds: [oldEmbed], components: [] });
+                        await interaction.update({ embeds: cleanedEmbed ? [cleanedEmbed] : [], components: [] });
                     } else {
-                        await alarmData.lastMessage.edit({ embeds: [oldEmbed], components: [] });
+                        await alarmData.lastMessage.edit({ embeds: cleanedEmbed ? [cleanedEmbed] : [], components: [] });
                     }
                     
                     const msg = `🛑 **${alarmData.alertName} stopped** by ${interaction.user}!`;

@@ -14,7 +14,7 @@ module.exports = {
                 options: [
                     {
                         name: "user",
-                        description: "The user whose balance you want to check (Admin only)",
+                        description: "The user whose balance you want to check (Bank Manager/authorized role)",
                         type: 6,
                         required: false
                     }
@@ -22,7 +22,7 @@ module.exports = {
             },
             {
                 name: "add",
-                description: "Add money to a user's bank account (Admin only)",
+                description: "Add money to a user's bank account (Bank Manager/authorized role)",
                 type: 1, // Subcommand
                 options: [
                     {
@@ -41,7 +41,7 @@ module.exports = {
             },
             {
                 name: "remove",
-                description: "Remove money from a user's bank account (Admin only)",
+                description: "Remove money from a user's bank account (Bank Manager/authorized role)",
                 type: 1, // Subcommand
                 options: [
                     {
@@ -85,21 +85,21 @@ module.exports = {
         
         // Permission check
         const adminRoleId = db.settings.get(guildId, "adminRoleId");
+        const hasBankManagerRole = Boolean(adminRoleId && interaction.member.roles.cache.has(adminRoleId));
         const isAdmin = botOwners.includes(interaction.user.id) || 
-                        interaction.member.permissions.has(PermissionFlagsBits.Administrator) ||
-                        (adminRoleId && interaction.member.roles.cache.has(adminRoleId)) ||
+                hasBankManagerRole ||
                         interaction.member.roles.cache.some(role => bankAdminRoles.includes(role.id));
 
         // --- BALANCE SUBCOMMAND ---
         if (subcommand === "balance") {
             const targetUser = interaction.options.getUser("user") || interaction.user;
 
-            if (targetUser.id !== interaction.user.id && !isAdmin) {
+            if (targetUser.id !== interaction.user.id && !hasBankManagerRole) {
                 return await interaction.reply({
                     embeds: [
                         new EmbedBuilder()
                             .setTitle("❌ Permission Denied")
-                            .setDescription("You are not authorized to view other users' balances.")
+                            .setDescription("Only the configured Bank Manager role can view other users' balances.")
                             .setColor("#FF4B4B")
                     ],
                     flags: [MessageFlags.Ephemeral]
@@ -249,11 +249,11 @@ module.exports = {
         else if (subcommand === "help") {
             const embed = new EmbedBuilder()
                 .setTitle("📖 Bank & Economy Help Guide")
-                .setDescription("The Bank System provides a guild-wide economy where users can track coins and admins can manage funds.")
+                .setDescription("The Bank System provides a guild-wide economy where users can track coins, and only authorized bank roles can manage funds.")
                 .addFields(
                     { 
                         name: "💰 Personal Banking", 
-                        value: "• `/bank balance` - View your current coin balance.\n• `/bank balance [user]` - (Admins Only) View another user's balance." 
+                        value: "• `/bank balance` - View your current coin balance.\n• `/bank balance [user]` - (Configured Bank Manager role only) View another user's balance." 
                     },
                     {
                         name: "🛠️ Admin Management",
@@ -261,7 +261,7 @@ module.exports = {
                     },
                     {
                         name: "⚖️ Permissions",
-                        value: "• **Users**: Can check their own balance.\n• **Admins/Bank Managers**: Can modify any user's balance and view private economy data."
+                        value: "• **Users**: Can check their own balance.\n• **Configured Bank Manager Role**: Required for `/bank balance [user]`.\n• **Bank Managers/Configured Bank Roles/Bot Owners**: Can use `/bank add` and `/bank remove`.\n• **Server Admins (Manage Server/Administrator)**: Can run `/bank setup` to configure or recover bank role access."
                     }
                 )
                 .setColor("#FFD700")
