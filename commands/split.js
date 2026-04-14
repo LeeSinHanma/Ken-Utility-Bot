@@ -554,6 +554,8 @@ module.exports = {
         if (interaction.user.id !== session.host_id) return await interaction.reply({ content: "❌ Only the host can perform this action.", flags: [MessageFlags.Ephemeral] });
 
         if (action === "split_mark_select") {
+            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
             const selectedUserIds = interaction.values;
             let updatedCount = 0;
 
@@ -585,9 +587,9 @@ module.exports = {
 
                 db.splits.save(sessionId, session);
                 await finalizeSplitIfComplete(interaction, sessionId, session);
-                await interaction.reply({ content: `✅ Successfully marked ${updatedCount} user(s) as claimed.`, flags: [MessageFlags.Ephemeral] });
+                await interaction.editReply({ content: `✅ Successfully marked ${updatedCount} user(s) as claimed.` });
             } else {
-                await interaction.reply({ content: "ℹ️ No changes were made. Selected users might already be marked as claimed or aren't part of this split.", flags: [MessageFlags.Ephemeral] });
+                await interaction.editReply({ content: "ℹ️ No changes were made. Selected users might already be marked as claimed or aren't part of this split." });
             }
         }
     }
