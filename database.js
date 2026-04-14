@@ -103,12 +103,17 @@ const customCommands = {
         const rows = db.prepare("SELECT * FROM custom_commands WHERE guild_id = ?").all(guildId);
         return rows.map(r => JSON.parse(r.config));
     },
+    get: (guildId, name) => {
+        const row = db.prepare("SELECT config FROM custom_commands WHERE guild_id = ? AND name = ?").get(guildId, name);
+        return row ? JSON.parse(row.config) : null;
+    },
     add: (guildId, name, config) => {
+        const normalizedConfig = { ...config, name };
         return db.prepare(`
             INSERT INTO custom_commands (guild_id, name, config) 
             VALUES (?, ?, ?) 
             ON CONFLICT(guild_id, name) DO UPDATE SET config = excluded.config
-        `).run(guildId, name, JSON.stringify(config));
+        `).run(guildId, name, JSON.stringify(normalizedConfig));
     },
     remove: (guildId, name) => {
         return db.prepare("DELETE FROM custom_commands WHERE guild_id = ? AND name = ?").run(guildId, name);

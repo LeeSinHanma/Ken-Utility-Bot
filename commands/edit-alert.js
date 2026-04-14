@@ -1,8 +1,6 @@
-const fs = require("node:fs");
-const path = require("node:path");
 const { MessageFlags } = require("discord.js");
-
-const customDataPath = path.join(__dirname, "..", "data", "custom_commands.json");
+const db = require("../database");
+const { syncGuildCommands } = require("../logic/command-sync");
 
 module.exports = {
     data: {
@@ -59,16 +57,13 @@ module.exports = {
         const focusedValue = interaction.options.getFocused().toLowerCase();
         const guildId = interaction.guildId;
 
-        let customData = {};
+        let guildCommands = [];
         try {
-            if (fs.existsSync(customDataPath)) {
-                customData = JSON.parse(fs.readFileSync(customDataPath, "utf-8"));
-            }
+            guildCommands = db.customCommands.getForGuild(guildId);
         } catch (err) {
             return await interaction.respond([]);
         }
 
-        const guildCommands = customData[guildId] || [];
         const choices = guildCommands.map(cmd => cmd.name);
         const filtered = choices.filter(choice => choice.toLowerCase().includes(focusedValue));
         
@@ -81,25 +76,23 @@ module.exports = {
         const name = interaction.options.getString("name");
         const guildId = interaction.guildId;
 
-        let customData = {};
+        let guildCommands = [];
         try {
-            if (fs.existsSync(customDataPath)) {
-                customData = JSON.parse(fs.readFileSync(customDataPath, "utf-8"));
-            }
+            guildCommands = db.customCommands.getForGuild(guildId);
         } catch (err) {
             console.error("Failed to load custom commands:", err);
         }
 
-        if (!customData[guildId]) {
+        if (guildCommands.length === 0) {
             return await interaction.reply({ content: "No custom commands found for this server.", flags: [MessageFlags.Ephemeral] });
         }
 
-        const commandIndex = customData[guildId].findIndex(cmd => cmd.name === name);
+        const commandIndex = guildCommands.findIndex(cmd => cmd.name === name);
         if (commandIndex === -1) {
             return await interaction.reply({ content: `Command \`/${name}\` not found in this server.`, flags: [MessageFlags.Ephemeral] });
         }
 
-        const cmd = customData[guildId][commandIndex];
+        const cmd = guildCommands[commandIndex];
 
         // Update fields if provided
         const newDesc = interaction.options.getString("description");
@@ -118,15 +111,16 @@ module.exports = {
             cmd.color = parseInt(newColorStr.replace("#", ""), 16);
         }
 
-        // Save back to file
+        // Save back to DB and sync this guild immediately
         try {
-            fs.writeFileSync(customDataPath, JSON.stringify(customData, null, 4));
+            db.customCommands.add(guildId, name, cmd);
+            await syncGuildCommands(interaction.client, interaction.guild);
             await interaction.reply({
-                content: `✅ **Success!** Command \`/${name}\` has been updated.\n\n**Note:** Like creation, these changes will take effect after the bot restarts or re-syncs.`,
+                content: `✅ **Success!** Command \`/${name}\` has been updated and synced for this server.`,
                 flags: []
             });
         } catch (err) {
-            console.error("Failed to save edited command:", err);
+            console.error(`[SYNC] Failed to edit and sync custom command \"${name}\" for guild ${guildId}:`, err);
             await interaction.reply({ content: "Failed to save the changes due to a system error.", flags: [MessageFlags.Ephemeral] });
         }
     }

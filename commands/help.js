@@ -1,8 +1,5 @@
 const { EmbedBuilder, MessageFlags } = require("discord.js");
-const fs = require("node:fs");
-const path = require("node:path");
-
-const customDataPath = path.join(__dirname, "..", "data", "custom_commands.json");
+const db = require("../database");
 
 module.exports = {
     data: {
@@ -14,16 +11,13 @@ module.exports = {
         const guildId = interaction.guildId;
 
         // Load custom commands for the current guild
-        let customData = {};
+        let guildCommands = [];
         try {
-            if (fs.existsSync(customDataPath)) {
-                customData = JSON.parse(fs.readFileSync(customDataPath, "utf-8"));
-            }
+            guildCommands = db.customCommands.getForGuild(guildId);
         } catch (err) {
             console.error("Failed to load custom commands for help:", err);
         }
 
-        const guildCommands = customData[guildId] || [];
         const customList = guildCommands.length > 0 
             ? guildCommands.map(cmd => `\`/${cmd.name}\` - ${cmd.description}`).join("\n") 
             : "No custom alerts created for this server yet.";
@@ -43,7 +37,7 @@ module.exports = {
                 },
                 { 
                     name: "🛠️ Admin Tools", 
-                    value: "• `/create-alert` - Build a permanent server preset.\n• `/bank setup` - Configure bank management roles.\n• `/bank add/remove` - Manage user coin balances." 
+                    value: "• `/create-alert` - Build a permanent server preset.\n• `/sync-commands` - Force rebuild/sync slash commands for this server.\n• `/bank setup` - Configure bank management roles.\n• `/bank add/remove` - Manage user coin balances." 
                 },
                 { 
                     name: "🎯 Server Custom Presets", 

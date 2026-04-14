@@ -35,7 +35,7 @@ module.exports = {
                     },
                     {
                         name: "📝 Pro-Tips",
-                        value: "• **Early Warnings:** Set a `remind-before` value to get a ping X minutes before the arrival.\n• **Syncing:** New or edited presets may take a few moments (or a bot restart) to appear in the Discord slash command list."
+                        value: "• **Early Warnings:** Set a `remind-before` value to get a ping X minutes before the arrival.\n• **Syncing:** New, edited, or deleted presets are re-synced to this server immediately."
                     }
                 )
                 .setColor("#7289DA")
