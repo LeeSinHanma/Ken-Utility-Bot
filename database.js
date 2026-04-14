@@ -172,9 +172,9 @@ const splits = {
         return db.prepare("DELETE FROM splits WHERE session_id = ?").run(sessionId);
     },
     getAllPending: (userId) => {
-        const rows = db.prepare("SELECT data FROM splits").all();
+        const rows = db.prepare("SELECT session_id, data FROM splits").all();
         return rows
-            .map(r => JSON.parse(r.data))
+            .map(r => ({ id: r.session_id, ...JSON.parse(r.data) }))
             .filter(s => s.user_breakdown[userId] && !s.claimed_status[userId]);
     }
 };
