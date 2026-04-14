@@ -1,8 +1,6 @@
-const fs = require("node:fs");
-const path = require("node:path");
 const { MessageFlags } = require("discord.js");
-
-const customDataPath = path.join(__dirname, "..", "data", "custom_commands.json");
+const db = require("../database");
+const { syncGuildCommands } = require("../logic/command-sync");
 
 module.exports = {
     data: {
@@ -70,23 +68,9 @@ module.exports = {
         // Convert hex string to integer
         const color = parseInt(colorStr.replace("#", ""), 16);
 
-        // Load existing custom commands
-        let customData = {};
-        try {
-            if (fs.existsSync(customDataPath)) {
-                customData = JSON.parse(fs.readFileSync(customDataPath, "utf-8"));
-            }
-        } catch (err) {
-            console.error("Failed to load custom commands:", err);
-        }
-
-        // Initialize guild array if it doesn't exist
-        if (!customData[guildId]) {
-            customData[guildId] = [];
-        }
-
         // Check if name already exists in THIS guild
-        if (customData[guildId].some(cmd => cmd.name === name)) {
+        const existingCommands = db.customCommands.getForGuild(guildId);
+        if (existingCommands.some(cmd => cmd.name === name)) {
             return await interaction.reply({
                 content: `Error: A custom command with the name \`/${name}\` already exists in this server!`,
                 flags: [MessageFlags.Ephemeral]
@@ -104,20 +88,19 @@ module.exports = {
             color
         };
 
-        customData[guildId].push(newCommand);
-
-        // Save to file
+        // Save to DB then sync this guild immediately
         try {
-            fs.writeFileSync(customDataPath, JSON.stringify(customData, null, 4));
+            db.customCommands.add(guildId, name, newCommand);
+            await syncGuildCommands(interaction.client, interaction.guild);
             
             await interaction.reply({
-                content: `✅ **Success!** Custom command \`/${name}\` has been created for **this server**.\n\n**Important:** The new command will appear in the "/" list after the bot **restarts** or re-synchronizes with Discord.`,
+                content: `✅ **Success!** Custom command \`/${name}\` has been created and synced for **this server**. It should appear in the slash command list within seconds.`,
                 flags: [] // Public success message
             });
         } catch (err) {
-            console.error("Failed to save custom command:", err);
+            console.error(`[SYNC] Failed to create and sync custom command \"${name}\" for guild ${guildId}:`, err);
             await interaction.reply({
-                content: "Failed to save the new command due to a system error.",
+                content: "The command was not fully synced due to a system error. Check logs for details.",
                 flags: [MessageFlags.Ephemeral]
             });
         }

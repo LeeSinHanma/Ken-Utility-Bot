@@ -39,6 +39,7 @@
 | :-------------- | :---------------------------------------------------- |
 | `/bank balance` | View your current balance or a target user's balance. |
 | `/create-alert` | Generate a new, custom slash command for your server. |
+| `/sync-commands`| Force rebuild and sync slash commands in this server. |
 | `/split`        | Initiate a payout distribution session.               |
 | `/mention-role` | Set a timed alarm for a specific role.                |
 | `/help`         | Display a detailed guide of all available features.   |
