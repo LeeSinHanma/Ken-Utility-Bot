@@ -3,14 +3,20 @@ const { executeMentionTimer } = require("../logic/mention-timer");
 
 module.exports = {
     data: {
-        name: "mention-role",
-        description: "Mention a specific role with a timed alarm",
+        name: "mention-users",
+        description: "Mention one or more users with a timed alarm",
         options: [
             {
-                name: "target-role",
-                description: "The role you want to mention",
-                type: 8, // Role type
-                required: true
+                name: "users",
+                description: "User mentions or IDs separated by spaces",
+                type: 3, // String type
+                required: false
+            },
+            {
+                name: "target-user",
+                description: "Optional single user to include",
+                type: 6, // User type
+                required: false
             },
             {
                 name: "duration",
@@ -34,25 +40,37 @@ module.exports = {
     },
 
     async execute(interaction) {
-        const role = interaction.options.getRole("target-role");
+        const targetUser = interaction.options.getUser("target-user");
+        const usersRaw = interaction.options.getString("users") || "";
         const duration = interaction.options.getInteger("duration");
         const interval = interaction.options.getInteger("interval");
         const customMessage = interaction.options.getString("message")?.trim();
 
-        if (!role) {
+        const parsedIds = new Set();
+        const mentionOrIdRegex = /<@!?(\d{17,20})>|\b(\d{17,20})\b/g;
+        for (const match of usersRaw.matchAll(mentionOrIdRegex)) {
+            const id = match[1] || match[2];
+            if (id) parsedIds.add(id);
+        }
+        if (targetUser) {
+            parsedIds.add(targetUser.id);
+        }
+
+        if (parsedIds.size === 0) {
             return await interaction.reply({
-                content: "Please choose a target role.",
+                content: "Please provide at least one user using `users` (mentions/IDs) or `target-user`.",
                 flags: [MessageFlags.Ephemeral]
             });
         }
 
+        const mentionText = [...parsedIds].map((id) => `<@${id}>`).join(" ");
+
         await executeMentionTimer(interaction, {
-            targetText: role.toString(),
+            targetText: mentionText,
             duration,
             interval,
             customMessage,
-            kind: "role",
-            targetRolePosition: role.position
+            kind: "users"
         });
     }
 };

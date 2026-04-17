@@ -1,12 +1,162 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, UserSelectMenuBuilder, StringSelectMenuBuilder } = require("discord.js");
 const db = require("../database");
 
+function extractUserIds(input) {
+    if (!input) {
+        return [];
+    }
+
+    const ids = [];
+
+    for (const match of input.matchAll(/<@!?(\d+)>/g)) {
+        ids.push(match[1]);
+    }
+
+    for (const match of input.matchAll(/(?<!\d)(\d{15,20})(?!\d)/g)) {
+        ids.push(match[1]);
+    }
+
+    return ids;
+}
+
+function calculateBreakdown(session, userIds) {
+    const userModifiers = session.user_modifiers || {};
+    const equalShare = session.net_amount / userIds.length;
+    const breakdown = {};
+    let surplus = 0;
+    const unmodifiedUsers = [];
+
+    userIds.forEach(id => {
+        if (userModifiers[id] !== undefined) {
+            const share = equalShare * (userModifiers[id] / 100);
+            breakdown[id] = share;
+            surplus += (equalShare - share);
+        } else {
+            unmodifiedUsers.push(id);
+        }
+    });
+
+    if (unmodifiedUsers.length > 0) {
+        const bonus = surplus / unmodifiedUsers.length;
+        unmodifiedUsers.forEach(id => {
+            breakdown[id] = equalShare + bonus;
+        });
+    } else {
+        userIds.forEach(id => {
+            if (breakdown[id] === undefined) breakdown[id] = equalShare;
+        });
+    }
+
+    return breakdown;
+}
+
+function getSplitRecipients(session) {
+    return Array.isArray(session.recipient_order) && session.recipient_order.length > 0
+        ? session.recipient_order
+        : Object.keys(session.user_breakdown || {});
+}
+
+function buildSplitJumpUrl(session) {
+    if (session.thread_id) {
+        return `https://discord.com/channels/${session.guild_id}/${session.thread_id}`;
+    }
+
+    return `https://discord.com/channels/${session.guild_id}/${session.channel_id}/${session.message_id}`;
+}
+
+function buildSplitThreadName(hostName) {
+    const now = new Date();
+    const hh = String(now.getUTCHours()).padStart(2, "0");
+    const mm = String(now.getUTCMinutes()).padStart(2, "0");
+    const month = String(now.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(now.getUTCDate()).padStart(2, "0");
+    const year = now.getUTCFullYear();
+    const safeHost = (hostName || "Host").replace(/[\r\n]/g, " ").trim();
+    const fullName = `${safeHost} ${hh}:${mm} UTC ${month}/${day}/${year} split`;
+
+    return fullName.slice(0, 100);
+}
+
+async function cleanupSplitThread(interaction, session, reason) {
+    let splitThread = null;
+
+    if (session.thread_id && session.channel_id === session.thread_id) {
+        splitThread = await interaction.client.channels.fetch(session.channel_id).catch(() => null);
+    } else if (session.thread_id) {
+        splitThread = await interaction.client.channels.fetch(session.thread_id).catch(() => null);
+    }
+
+    if (!splitThread || typeof splitThread.isThread !== "function" || !splitThread.isThread()) {
+        return;
+    }
+
+    try {
+        await splitThread.delete(reason);
+    } catch (error) {
+        console.warn(`Failed to delete split thread ${splitThread.id}:`, error.message);
+        try {
+            if (typeof splitThread.setLocked === "function") {
+                await splitThread.setLocked(true, reason);
+            }
+            if (typeof splitThread.setArchived === "function") {
+                await splitThread.setArchived(true, reason);
+            }
+        } catch (archiveError) {
+            console.warn(`Failed to archive split thread ${splitThread.id}:`, archiveError.message);
+        }
+    }
+}
+
+function buildPendingSplitsView(userId, pendingSplits) {
+    const embed = new EmbedBuilder()
+        .setTitle("📋 Your Pending Splits")
+        .setColor("#5865F2")
+        .setTimestamp();
+
+    const locateRow = new ActionRowBuilder();
+    const removeRow = new ActionRowBuilder();
+    let description = "";
+
+    pendingSplits.slice(0, 5).forEach((split, index) => {
+        const amount = split.user_breakdown[userId];
+        const jumpUrl = buildSplitJumpUrl(split);
+
+        description += `**#${index + 1}** | **${Math.round(amount).toLocaleString()}** credits from <@${split.host_id}>\n[🔗 Open Split](${jumpUrl})\n\n`;
+
+        locateRow.addComponents(
+            new ButtonBuilder()
+                .setCustomId(`split_locate:${split.id}`)
+                .setLabel(`Locate #${index + 1}`)
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+        removeRow.addComponents(
+            new ButtonBuilder()
+                .setCustomId(`split_remove:${split.id}`)
+                .setLabel(`Remove #${index + 1}`)
+                .setStyle(ButtonStyle.Danger)
+        );
+    });
+
+    embed.setDescription(description || "No pending splits found.");
+
+    const components = [];
+    if (locateRow.components.length > 0) components.push(locateRow);
+    if (removeRow.components.length > 0) components.push(removeRow);
+
+    return { embed, components };
+}
+
 /**
  * Utility: Generate the split embed description based on session state
  */
 function generateDescription(session) {
-    const lines = Object.entries(session.user_breakdown).map(([userId, amount]) => {
+    const lines = getSplitRecipients(session).map(userId => {
         let status = "";
+        if (session.opted_out_status?.[userId]) {
+            return `<@${userId}> - **OPTED OUT**`;
+        }
+
         if (session.claimed_status[userId]) {
             status = " **Claimed ✅**";
         } else if (session.pending_claims.includes(userId)) {
@@ -17,12 +167,18 @@ function generateDescription(session) {
             ? ` (${session.user_modifiers[userId]}% Share)` 
             : "";
 
+        const amount = session.user_breakdown[userId];
         return `<@${userId}>${modifier} - **${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}** credits${status}`;
     });
 
     let details = "";
     if (session.extra > 0) details += `\n➕ **Extra:** ${session.extra.toLocaleString()}`;
     if (session.deductions > 0) details += `\n➖ **Deductions:** ${session.deductions.toLocaleString()}`;
+
+    const totalOptedOut = Object.values(session.opted_out_status || {}).filter(Boolean).length;
+    if (totalOptedOut > 0) {
+        details += `\n🚪 **Total Opted Out:** ${totalOptedOut}`;
+    }
 
     return `**Host:** <@${session.host_id}>\n**Initial Total:** ${session.total_amount.toLocaleString()}\n**Discount:** ${session.discount}%${details}\n**💎 Total to Split:** ${session.net_amount.toLocaleString()}\n\n**Recipients:**\n${lines.join("\n")}`;
 }
@@ -53,6 +209,8 @@ async function finalizeSplitIfComplete(interaction, sessionId, session) {
             } catch (error) {
                 console.error("Failed to update completed split message:", error);
             }
+
+            await cleanupSplitThread(interaction, session, `Split ${sessionId} completed`);
         }
     } catch (error) {
         console.error("Failed to finalize completed split session:", error);
@@ -89,6 +247,7 @@ module.exports = {
                         name: "users",
                         description: "Users to split with (mentions or IDs)",
                         type: 3,
+                        max_length: 4000,
                         required: true
                     },
                     {
@@ -107,6 +266,7 @@ module.exports = {
                         name: "modifiers",
                         description: "Custom percentages (e.g. 50% @user1 @user2)",
                         type: 3,
+                        max_length: 4000,
                         required: false
                     },
                     {
@@ -146,21 +306,20 @@ module.exports = {
             const allUserIds = [];
             
             // From main users list
-            const mainUserIds = usersInput.match(/\d+/g) || [];
+            const mainUserIds = extractUserIds(usersInput);
             allUserIds.push(...mainUserIds);
 
             // From modifiers list (and parse percentages)
             const userModifiers = {};
             if (modifiersInput) {
-                const groups = modifiersInput.match(/(\d+)%\s*((?:<@!?\d+>\s*)+)/g);
+                const groups = modifiersInput.match(/(\d+)%\s*([^%]+)/g);
                 if (groups) {
                     for (const group of groups) {
                         const percentMatch = group.match(/(\d+)%/);
-                        const userMatches = group.match(/<@!?(\d+)>/g);
-                        if (percentMatch && userMatches) {
+                        const userIds = extractUserIds(group);
+                        if (percentMatch && userIds.length > 0) {
                             const percent = parseInt(percentMatch[1]);
-                            userMatches.forEach(u => {
-                                const id = u.match(/\d+/)[0];
+                            userIds.forEach(id => {
                                 allUserIds.push(id);
                                 userModifiers[id] = percent;
                             });
@@ -218,6 +377,7 @@ module.exports = {
                 host_id: interaction.user.id,
                 guild_id: interaction.guildId,
                 channel_id: interaction.channelId,
+                thread_id: null,
                 total_amount: totalAmount,
                 discount: discount,
                 extra: extra,
@@ -225,6 +385,8 @@ module.exports = {
                 net_amount: netAmount,
                 user_breakdown: breakdown,
                 user_modifiers: userModifiers,
+                recipient_order: userIds,
+                opted_out_status: {},
                 claimed_status: {},
                 pending_claims: [],
                 host_notification_ids: {},
@@ -263,8 +425,32 @@ module.exports = {
 
             await interaction.reply({ embeds: [embed], components: [row] });
             const response = await interaction.fetchReply();
-            
+
             session.message_id = response.id;
+
+            try {
+                const hostName = interaction.member?.displayName || interaction.user.username;
+                const threadName = buildSplitThreadName(hostName);
+                const thread = await response.startThread({
+                    name: threadName,
+                    autoArchiveDuration: 1440,
+                    reason: `Split session ${sessionId}`
+                });
+
+                const threadMessage = await thread.send({ embeds: [embed], components: [row] });
+
+                session.thread_id = thread.id;
+                session.channel_id = thread.id;
+                session.message_id = threadMessage.id;
+
+                await response.edit({
+                    content: `🧵 Split moved to <#${thread.id}>. Use the thread message for all actions.`,
+                    embeds: [embed],
+                    components: []
+                });
+            } catch (error) {
+                console.warn(`Failed to auto-create thread for split ${sessionId}:`, error.message);
+            }
             
             db.splits.save(sessionId, session);
             await finalizeSplitIfComplete(interaction, sessionId, session);
@@ -272,37 +458,14 @@ module.exports = {
 
         else if (subcommand === "check") {
             const userId = interaction.user.id;
-            const pendingSplits = db.splits.getAllPending(userId);
+            const pendingSplits = db.splits.getAllPending(userId, interaction.guildId);
 
             if (pendingSplits.length === 0) {
                 return await interaction.reply({ content: "✅ You have no pending splits to claim!", flags: [MessageFlags.Ephemeral] });
             }
 
-            const embed = new EmbedBuilder()
-                .setTitle("📋 Your Pending Splits")
-                .setColor("#5865F2")
-                .setTimestamp();
-
-            const row = new ActionRowBuilder();
-            let description = "";
-
-            pendingSplits.slice(0, 5).forEach((split, index) => {
-                const amount = split.user_breakdown[userId];
-                const jumpUrl = `https://discord.com/channels/${split.guild_id}/${split.channel_id}/${split.message_id}`;
-                
-                description += `**#${index + 1}** | **${Math.round(amount).toLocaleString()}** credits from <@${split.host_id}>\n[🔗 Jump to Message](${jumpUrl})\n\n`;
-                
-                row.addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`split_locate:${split.id}`)
-                        .setLabel(`Locate #${index + 1}`)
-                        .setStyle(ButtonStyle.Secondary)
-                );
-            });
-
-            embed.setDescription(description || "No pending splits found.");
-
-            await interaction.reply({ embeds: [embed], components: row.components.length > 0 ? [row] : [], flags: [MessageFlags.Ephemeral] });
+            const view = buildPendingSplitsView(userId, pendingSplits);
+            await interaction.reply({ embeds: [view.embed], components: view.components, flags: [MessageFlags.Ephemeral] });
         }
 
         else if (subcommand === "help") {
@@ -348,8 +511,9 @@ module.exports = {
             try {
                 const channel = await interaction.client.channels.fetch(session.channel_id);
                 if (channel) {
+                    const jumpUrl = buildSplitJumpUrl(session);
                     await channel.send({
-                        content: `📍 <@${interaction.user.id}>, here is your pending split from <@${session.host_id}>!\nhttps://discord.com/channels/${session.guild_id}/${session.channel_id}/${session.message_id}`
+                        content: `📍 <@${interaction.user.id}>, here is your pending split from <@${session.host_id}>!\n${jumpUrl}`
                     });
                 }
             } catch (err) {
@@ -357,6 +521,99 @@ module.exports = {
                 await interaction.followUp({ content: "❌ Could not send a message in that channel.", flags: [MessageFlags.Ephemeral] });
             }
             return;
+        }
+
+        if (action === "split_remove") {
+            const userId = interaction.user.id;
+
+            if (!session.user_breakdown[userId]) {
+                return await interaction.reply({ content: "❌ This split wasn't assigned to you.", flags: [MessageFlags.Ephemeral] });
+            }
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`split_remove_confirm:${sessionId}`)
+                    .setLabel("Yes, Opt Out")
+                    .setStyle(ButtonStyle.Danger),
+                new ButtonBuilder()
+                    .setCustomId(`split_remove_cancel:${sessionId}`)
+                    .setLabel("No, Keep Me In")
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+            return await interaction.reply({
+                content: "⚠️ Are you sure you want to opt out of this split? Your share will be removed from your side only.",
+                components: [row],
+                flags: [MessageFlags.Ephemeral]
+            });
+        }
+
+        if (action === "split_remove_cancel") {
+            return await interaction.reply({ content: "✅ Opt-out cancelled.", flags: [MessageFlags.Ephemeral] });
+        }
+
+        if (action === "split_remove_confirm") {
+            const userId = interaction.user.id;
+
+            if (!session.user_breakdown[userId]) {
+                return await interaction.reply({ content: "❌ This split wasn't assigned to you.", flags: [MessageFlags.Ephemeral] });
+            }
+
+            await interaction.deferUpdate();
+
+            const channel = await interaction.client.channels.fetch(session.channel_id).catch(() => null);
+            const notifyMsgId = session.host_notification_ids?.[userId];
+            if (channel && notifyMsgId) {
+                try {
+                    const notifyMsg = await channel.messages.fetch(notifyMsgId);
+                    await notifyMsg.delete();
+                } catch (err) {}
+            }
+
+            session.opted_out_status = session.opted_out_status || {};
+            session.opted_out_status[userId] = true;
+            delete session.user_breakdown[userId];
+            delete session.claimed_status[userId];
+            delete session.user_modifiers?.[userId];
+            if (session.pending_claims) {
+                session.pending_claims = session.pending_claims.filter(id => id !== userId);
+            }
+            if (session.host_notification_ids) {
+                delete session.host_notification_ids[userId];
+            }
+            const remainingUserIds = Object.keys(session.user_breakdown);
+
+            if (remainingUserIds.length === 0) {
+                try {
+                    if (channel) {
+                        const originalMsg = await channel.messages.fetch(session.message_id);
+                        const updatedEmbed = EmbedBuilder.from(originalMsg.embeds[0]).setDescription(generateDescription(session));
+                        await originalMsg.edit({ embeds: [updatedEmbed], components: [] });
+                    }
+                } catch (err) {}
+
+                db.splits.delete(sessionId);
+                return await interaction.editReply({ content: "✅ You opted out of the split. No recipients remained, so the split was closed.", embeds: [], components: [] });
+            }
+
+            try {
+                if (channel) {
+                    const originalMsg = await channel.messages.fetch(session.message_id);
+                    const updatedEmbed = EmbedBuilder.from(originalMsg.embeds[0]).setDescription(generateDescription(session));
+                    await originalMsg.edit({ embeds: [updatedEmbed] });
+                }
+            } catch (err) {}
+
+            db.splits.save(sessionId, session);
+
+            const pendingSplits = db.splits.getAllPending(userId, interaction.guildId);
+            const view = buildPendingSplitsView(userId, pendingSplits);
+
+            if (pendingSplits.length === 0) {
+                return await interaction.editReply({ content: "✅ You opted out of that split and now have no pending splits in this server.", embeds: [], components: [] });
+            }
+
+            return await interaction.editReply({ content: "✅ You opted out of the split.", embeds: [view.embed], components: view.components });
         }
 
         // --- MARK MANUAL ACTION (Host Selection Menu) ---
@@ -446,6 +703,8 @@ module.exports = {
                     const originalMsg = await channel.messages.fetch(session.message_id);
                     await originalMsg.delete();
                 } catch (err) {}
+
+                await cleanupSplitThread(interaction, session, `Split ${sessionId} deleted by host`);
             }
 
             db.splits.delete(sessionId);

@@ -63,7 +63,11 @@ const bank = {
      * Atomically update a balance
      */
     update: (guildId, userId, amount) => {
-        return db.prepare("UPDATE bank SET balance = balance + ? WHERE guild_id = ? AND user_id = ?").run(amount, guildId, userId);
+        return db.prepare(`
+            INSERT INTO bank (guild_id, user_id, balance)
+            VALUES (?, ?, ?)
+            ON CONFLICT(guild_id, user_id) DO UPDATE SET balance = bank.balance + excluded.balance
+        `).run(guildId, userId, amount);
     },
 
     /**
@@ -171,11 +175,12 @@ const splits = {
     delete: (sessionId) => {
         return db.prepare("DELETE FROM splits WHERE session_id = ?").run(sessionId);
     },
-    getAllPending: (userId) => {
+    getAllPending: (userId, guildId = null) => {
         const rows = db.prepare("SELECT session_id, data FROM splits").all();
         return rows
             .map(r => ({ id: r.session_id, ...JSON.parse(r.data) }))
-            .filter(s => s.user_breakdown[userId] && !s.claimed_status[userId]);
+            .filter(s => s.user_breakdown[userId] && !s.claimed_status[userId])
+            .filter(s => !guildId || s.guild_id === guildId);
     }
 };
 

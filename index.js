@@ -6,6 +6,7 @@ const { Client, GatewayIntentBits, Events, Collection, MessageFlags, Interaction
 
 const db = require("./database");
 const templateAlert = require("./logic/template-alert.js");
+const mentionTimer = require("./logic/mention-timer");
 const { syncGuildCommands } = require("./logic/command-sync");
 const SPLIT_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -165,6 +166,12 @@ client.on(Events.InteractionCreate, async interaction => {
         }
     } else if (interaction.isButton()) {
         const customId = interaction.customId;
+
+        if (customId.startsWith("cancel_mention_timer:")) {
+            if (mentionTimer && mentionTimer.handleButton) {
+                return await mentionTimer.handleButton(interaction);
+            }
+        }
 
         if (customId.startsWith("split_")) {
             const splitCommand = client.commands.get("split");

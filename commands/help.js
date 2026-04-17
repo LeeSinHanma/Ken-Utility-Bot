@@ -33,7 +33,7 @@ module.exports = {
                 },
                 { 
                     name: "⏱️ Timers & Alerts", 
-                    value: "• `/alert help` - Master guide for server presets and alerts.\n• `/mention-role` - Quick high-precision recurring timers.\n• `/ping` - Heartbeat check for bot responsiveness." 
+                    value: "• `/alert help` - Master guide for server presets and alerts.\n• `/mention-role` - Timed role mentions with optional message.\n• `/mention-users` - Timed user mentions with optional message.\n• `/ping` - Heartbeat check for bot responsiveness." 
                 },
                 { 
                     name: "🛠️ Admin Tools", 

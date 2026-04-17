@@ -31,7 +31,7 @@ module.exports = {
                     },
                     {
                         name: "⏲️ One-off Alarms",
-                        value: "• `/mention-role` - Set a quick, one-time or simple recurring timer without creating a permanent preset."
+                        value: "• `/mention-role` - Set a quick role timer (one-time or recurring) with optional message.\n• `/mention-users` - Set a quick user timer (one-time or recurring) with optional message."
                     },
                     {
                         name: "📝 Pro-Tips",

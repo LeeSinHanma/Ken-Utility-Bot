@@ -26,7 +26,7 @@
 
 ### 🛠 Utility Tools
 
-- **Timed Mentions**: Use `/mention-role` to set alarms with early warning reminders.
+- **Timed Mentions**: Use `/mention-role` or `/mention-users` to set alarms with optional custom messages.
 - **Autocomplete Support**: Intuitive command usage with real-time suggestions.
 
 ---
@@ -42,6 +42,7 @@
 | `/sync-commands`| Force rebuild and sync slash commands in this server. |
 | `/split`        | Initiate a payout distribution session.               |
 | `/mention-role` | Set a timed alarm for a specific role.                |
+| `/mention-users`| Set a timed alarm for a specific user.                |
 | `/help`         | Display a detailed guide of all available features.   |
 
 ### Setup Instructions
