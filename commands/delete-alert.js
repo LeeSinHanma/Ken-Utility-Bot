@@ -59,7 +59,7 @@ module.exports = {
         // Remove from DB and sync this guild immediately
         try {
             db.customCommands.remove(guildId, name);
-            await syncGuildCommands(interaction.client, guildId);
+            await syncGuildCommands(interaction.client, interaction.guild || guildId);
             await interaction.reply({
                 content: `🗑️ **Success!** Command \`/${name}\` has been deleted and synced for this server.`,
                 flags: []
