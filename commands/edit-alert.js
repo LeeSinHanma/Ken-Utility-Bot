@@ -114,7 +114,7 @@ module.exports = {
         // Save back to DB and sync this guild immediately
         try {
             db.customCommands.add(guildId, name, cmd);
-            await syncGuildCommands(interaction.client, interaction.guild);
+            await syncGuildCommands(interaction.client, guildId);
             await interaction.reply({
                 content: `✅ **Success!** Command \`/${name}\` has been updated and synced for this server.`,
                 flags: []

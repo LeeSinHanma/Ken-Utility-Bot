@@ -91,7 +91,7 @@ module.exports = {
         // Save to DB then sync this guild immediately
         try {
             db.customCommands.add(guildId, name, newCommand);
-            await syncGuildCommands(interaction.client, interaction.guild);
+            await syncGuildCommands(interaction.client, guildId);
             
             await interaction.reply({
                 content: `✅ **Success!** Custom command \`/${name}\` has been created and synced for **this server**. It should appear in the slash command list within seconds.`,

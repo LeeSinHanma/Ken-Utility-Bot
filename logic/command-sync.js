@@ -40,9 +40,18 @@ function buildGuildCommandData(client, guildId) {
 }
 
 async function syncGuildCommands(client, guild) {
-    const commands = buildGuildCommandData(client, guild.id);
-    await guild.commands.set(commands);
-    console.log(`[SYNC] Guild ${guild.name}: synced ${commands.length} slash commands.`);
+    const guildId = typeof guild === "string" ? guild : guild?.id;
+    if (!guildId) {
+        throw new TypeError("syncGuildCommands requires a guild object or guild id.");
+    }
+
+    const resolvedGuild = typeof guild === "string"
+        ? await client.guilds.fetch(guildId)
+        : (guild || await client.guilds.fetch(guildId));
+
+    const commands = buildGuildCommandData(client, guildId);
+    await resolvedGuild.commands.set(commands);
+    console.log(`[SYNC] Guild ${resolvedGuild.name}: synced ${commands.length} slash commands.`);
     return commands.length;
 }
 
