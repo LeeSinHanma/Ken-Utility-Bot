@@ -3,4 +3,5 @@ config.json
 .env
 .agents
 .gitignore
-database.db
+database.dbdata/database.db
+data/database.db
