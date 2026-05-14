@@ -57,6 +57,14 @@ module.exports = {
         // For now, let's just implement the logic
         
         const name = interaction.options.getString("name").toLowerCase().replace(/ /g, "-");
+        const NAME_REGEX = /^[a-z0-9_-]{1,32}$/;
+
+        if (!NAME_REGEX.test(name)) {
+            return await interaction.reply({
+                content: "Invalid command name. Names must be 1-32 characters, lowercase letters, numbers, hyphens or underscores only.",
+                flags: [MessageFlags.Ephemeral]
+            });
+        }
         const description = interaction.options.getString("description");
         const role = interaction.options.getRole("role");
         const duration = interaction.options.getInteger("duration");
