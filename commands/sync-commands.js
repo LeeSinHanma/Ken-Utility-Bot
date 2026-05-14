@@ -27,7 +27,7 @@ module.exports = {
         }
 
         try {
-            const count = await syncGuildCommands(interaction.client, interaction.guildId);
+            const count = await syncGuildCommands(interaction.client, interaction.guild || interaction.guildId);
             await interaction.reply({
                 content: `✅ Synced ${count} slash commands for this server.`,
                 flags: [MessageFlags.Ephemeral]

@@ -45,9 +45,22 @@ async function syncGuildCommands(client, guild) {
         throw new TypeError("syncGuildCommands requires a guild object or guild id.");
     }
 
-    const resolvedGuild = typeof guild === "string"
-        ? await client.guilds.fetch(guildId)
-        : (guild || await client.guilds.fetch(guildId));
+    let resolvedGuild = typeof guild === "string" ? null : guild;
+
+    if (!resolvedGuild) {
+        resolvedGuild = client.guilds.cache.get(guildId) || null;
+    }
+
+    if (!resolvedGuild) {
+        try {
+            resolvedGuild = await client.guilds.fetch(guildId);
+        } catch (error) {
+            if (error?.code === 10004) {
+                throw new Error(`Cannot sync commands: guild ${guildId} is unknown to this bot (code 10004).`);
+            }
+            throw error;
+        }
+    }
 
     const commands = buildGuildCommandData(client, guildId);
     await resolvedGuild.commands.set(commands);
